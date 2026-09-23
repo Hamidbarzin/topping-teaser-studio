@@ -1,5 +1,10 @@
 تیزرساز تاپینگ — خروجی واقعی MP4
 
+نسخه آنلاین برای پرسنل سوشال:
+https://hamidbarzin.github.io/topping-teaser-studio/
+
+برای راهنمای کامل فایل RAHNAMA_PERSONEL.txt را بخوانید.
+
 ۱) فایل ZIP را از حالت فشرده خارج کنید.
 ۲) FFmpeg و Python 3 باید روی کامپیوتر نصب باشند. در مک، اگر Homebrew دارید: brew install ffmpeg
 ۳) روی Start_Topping_Teaser.command دوبار کلیک کنید. اگر مک اجازه اجرا نداد، Terminal را در همین پوشه باز کنید و اجرا کنید:

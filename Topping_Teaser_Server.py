@@ -118,6 +118,8 @@ class Handler(BaseHTTPRequestHandler):
         route = urlparse(self.path).path
         if route == "/":
             return self.reply(200, (ROOT / "index.html").read_bytes(), "text/html; charset=utf-8")
+        if route == "/app.js":
+            return self.reply(200, (ROOT / "app.js").read_bytes(), "text/javascript; charset=utf-8")
         if route.startswith("/assets/") and Path(route).name in {f"frame_{f}.png" for f in FORMATS} | {"logo.png"}:
             return self.reply(200, (ROOT / "assets" / Path(route).name).read_bytes(), "image/png")
         if route.startswith("/download/"):

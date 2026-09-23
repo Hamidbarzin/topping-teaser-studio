@@ -1,0 +1,25 @@
+تیزرساز تاپینگ — راهنمای مدیر سوشال‌مدیا
+
+آدرس آنلاین (همین را در مرورگر باز کنید):
+https://hamidbarzin.github.io/topping-teaser-studio/
+
+Chrome یا Edge بهتر کار می‌کند. نصب برنامه لازم نیست.
+
+۱) عکس یا ویدیو را اضافه کنید.
+۲) سایز سوشال را انتخاب کنید:
+   • Instagram / TikTok Reel   ۱۰۸۰ × ۱۹۲۰
+   • Instagram Post            ۱۰۸۰ × ۱۳۵۰
+   • Square / Feed             ۱۰۸۰ × ۱۰۸۰
+   • LinkedIn                  ۱۲۰۰ × ۶۲۷
+۳) ترتیب و مدت صحنه‌ها را تنظیم کنید.
+۴) Preview را برای دیدن تصویر و صدا بزنید.
+۵) Create MP4 را بزنید و صبر کنید (بار اول کمی طول می‌کشد).
+۶) Save MP4 را بزنید. فایل در Downloads ذخیره می‌شود.
+
+قوانین برند:
+• هدر: لوگوی Topping
+• فوتر: فقط toppingcourier.ca
+• صدا با ویدیو می‌آید؛ عکس بی‌صدا است.
+
+کد پروژه:
+https://github.com/Hamidbarzin/topping-teaser-studio
