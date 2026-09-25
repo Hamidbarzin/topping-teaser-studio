@@ -292,6 +292,10 @@ function drawFooterCopy(
     context.fillText(row.text, width / 2, y);
     y += row.size * 1.35;
   }
+  if (branding.footer.showMapleLeaf) {
+    const size = inner * 0.28;
+    drawMaple(context, width * 0.07, height - inner + (inner - size) / 2, size, colors.site);
+  }
 }
 
 function drawTexts(

@@ -22,6 +22,7 @@ import { createId } from "../utils/id";
 import { inspectFile, loadImage, loadVideoMeta, makeThumbnail } from "../utils/media";
 import { deleteMedia, saveMedia, saveProject, loadProjectMedia } from "../projects/projectStorage";
 import { normalizeBranding } from "../branding/brandingPresets";
+import { sanitizeText } from "../utils/sanitize";
 import { useSettings } from "./useSettings";
 import { useToast } from "./useToast";
 
