@@ -1,3 +1,24 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Topping Teaser Studio</title><style>
-:root{font-family:Arial,Helvetica,sans-serif;background:#111439;color:#fafaff}*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at top left,#373ca0,#13163f 55%)}.shell{max-width:1500px;margin:auto;padding:22px;display:grid;grid-template-columns:370px 1fr;gap:22px}.panel,.main{border:1px solid #656abe;background:#20245c;border-radius:22px;padding:24px;box-shadow:0 20px 65px #0a0b2b77}.panel{align-self:start}.k{color:#f7931e;font-size:11px;letter-spacing:.17em;font-weight:900}h1{font-size:27px;margin:9px 0}p,.hint{font-size:13px;line-height:1.5;color:#d9daf7}label{display:block;font-size:11px;letter-spacing:.1em;text-transform:uppercase;font-weight:850;color:#d7d8ff;margin:20px 0 8px}input,select{background:#11153e;color:white;border:1px solid #7379c9;border-radius:10px;padding:12px;font:14px Arial;width:100%}input[type=file]{font-size:12px}button,.download{border:0;border-radius:10px;background:#f7931e;color:#1d1f56;font-weight:850;padding:12px 17px;cursor:pointer;text-decoration:none;display:inline-block}button:disabled{opacity:.5;cursor:not-allowed}.secondary{background:#454bad;color:white;border:1px solid #7479c4}.actions{display:flex;gap:9px;flex-wrap:wrap;margin-top:20px}.viewer{background:#121541;border-radius:15px;min-height:580px;display:grid;place-items:center;padding:18px}.viewer canvas{max-width:100%;max-height:72vh;width:auto;height:auto;box-shadow:0 17px 55px #0a0b24b3}.timeline{display:flex;gap:10px;overflow:auto;padding:12px 0}.scene{min-width:190px;max-width:190px;border:1px solid #696fbd;background:#2d3276;border-radius:12px;padding:10px}.scene.active{border-color:#f7931e;box-shadow:0 0 0 2px #f7931e}.scene strong{font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block}.scene input{padding:7px;width:74px;margin:8px 0}.scene button{padding:5px 9px;margin-right:4px}.status{color:#ffcf94;min-height:34px;font-size:13px;margin-top:16px;line-height:1.4}.download{margin-top:10px}.small{font-size:11px;color:#c6c9ee}.formats{display:grid;grid-template-columns:1fr 1fr;gap:8px}.fmt{background:#11153e;color:#d7d8ff;border:1px solid #7379c9;border-radius:10px;padding:10px 8px;text-align:left;font:12px/1.35 Arial;font-weight:700;cursor:pointer}.fmt small{display:block;font-weight:500;color:#b8bbe8;margin-top:3px}.fmt.on{background:#f7931e;color:#1d1f56;border-color:#f7931e}.fmt.on small{color:#4a2d08}@media(max-width:900px){.shell{display:block;padding:12px}.panel{margin-bottom:14px}.viewer{min-height:320px}}
-</style></head><body><div class="shell"><aside class="panel"><div class="k">TOPPING COURIER · SOCIAL STUDIO</div><h1>Teaser Maker</h1><p>Build a short teaser from photos and videos. Standard header (logo), auto-fitted centered media, and footer (toppingcourier.ca) — sized for social posts.</p><label>1 · Add photos or videos</label><input id="files" type="file" accept="image/*,video/*,.mov,.mkv,.webm" multiple><div class="hint">Select one or more files. Use the arrows below the preview to change their order.</div><label>2 · Social media size</label><input id="format" type="hidden" value="reel"><div class="formats" id="formats"><button type="button" class="fmt on" data-format="reel">Instagram / TikTok Reel<small>1080 × 1920</small></button><button type="button" class="fmt" data-format="post">Instagram Post<small>1080 × 1350</small></button><button type="button" class="fmt" data-format="square">Square / Feed<small>1080 × 1080</small></button><button type="button" class="fmt" data-format="linkedin">LinkedIn<small>1200 × 627</small></button></div><div class="actions"><button id="play" class="secondary">▶ Preview</button><button id="stop" class="secondary">■ Stop</button><button id="render">Create MP4</button></div><div id="status" class="status">Choose a photo or video to begin.</div><div id="result"></div><p class="small">Files stay in your browser. Create MP4 runs on this page (Chrome or Edge). Video sound is kept; photos are silent.</p></aside><main class="main"><div class="k">PREVIEW</div><div class="viewer"><canvas id="canvas" width="1080" height="1920"></canvas></div><label>Scenes and timing</label><div class="timeline" id="timeline"></div></main></div><script type="module" src="app.js"></script></body></html>
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/png" href="/branding/logo.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="Create professional branded social media teasers with Topping Courier Teaser Studio."
+    />
+    <meta name="theme-color" content="#050B14" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=Sora:wght@500;600;700&family=Vazirmatn:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <title>Topping Courier — Teaser Studio</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

@@ -1,66 +1,144 @@
-import { FFmpeg } from "https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.10/+esm";
-import { fetchFile, toBlobURL } from "https://cdn.jsdelivr.net/npm/@ffmpeg/util@0.12.1/+esm";
+import { Muxer, ArrayBufferTarget } from "https://cdn.jsdelivr.net/npm/mp4-muxer@5.2.2/+esm";
 
 const $ = (id) => document.getElementById(id);
 const canvas = $("canvas");
-const ctx = canvas.getContext("2d");
-const sizes = {
-  reel: [1080, 1920, 150, 150],
-  post: [1080, 1350, 135, 135],
-  square: [1080, 1080, 108, 108],
-  linkedin: [1200, 627, 63, 63],
+const ctx = canvas.getContext("2d", { alpha: false });
+const FORMATS = {
+  reel: { w: 1080, h: 1920, label: "Instagram Reel" },
+  post: { w: 1080, h: 1350, label: "Instagram Post" },
+  square: { w: 1080, h: 1080, label: "Square / Feed" },
+  linkedin: { w: 1200, h: 627, label: "LinkedIn" },
 };
+const HEADER_PCT = 0.14;
+const FOOTER_PCT = 0.13;
+const GAP_PCT = 0.018;
+const PLATE = "#F4F7FB";
+const LINE = "#F7931E";
+const INK = "#1D1F56";
+const NAVY = "#050B14";
+const FOOTER_TEXT = "toppingcourier.ca";
 
 let scenes = [];
 let selected = 0;
 let playing = false;
 let started = 0;
 let playIndex = 0;
-let frame = new Image();
-const ffmpeg = new FFmpeg();
-let ffmpegReady = false;
+let exportKind = "mp4";
+const logo = new Image();
+logo.onload = draw;
+logo.src = "assets/logo.png";
 
 function status(t) {
   $("status").textContent = t;
 }
 
-function frameLoad() {
-  frame = new Image();
-  frame.onload = draw;
-  frame.src = "assets/frame_" + $("format").value + ".png";
+function even(n) {
+  return Math.max(2, Math.round(n / 2) * 2);
 }
 
-function fit(media, x, y, w, h) {
+function designSize() {
+  return FORMATS[$("format").value] || FORMATS.reel;
+}
+
+function exportPixels() {
+  const { w, h } = designSize();
+  if ($("resolution").value === "720p") {
+    const scale = 720 / 1080;
+    return { w: even(w * scale), h: even(h * scale) };
+  }
+  return { w: even(w), h: even(h) };
+}
+
+function updatePixelLabel() {
+  const { w, h } = exportPixels();
+  const instagram = w === 1080 && h === 1920;
+  $("pixels").textContent = instagram ? `${w} × ${h} · Instagram Reel` : `${w} × ${h} · ${designSize().label}`;
+}
+
+function bars(width, height) {
+  const header = even(height * HEADER_PCT);
+  const footer = even(height * FOOTER_PCT);
+  const gap = Math.max(4, even(height * GAP_PCT));
+  return {
+    header,
+    footer,
+    gap,
+    x: 0,
+    y: header + gap,
+    w: width,
+    h: Math.max(2, even(height - header - footer - gap * 2)),
+  };
+}
+
+function cover(media, x, y, w, h) {
   const iw = media.videoWidth || media.naturalWidth;
   const ih = media.videoHeight || media.naturalHeight;
   if (!iw || !ih) return;
   const f = Math.max(w / iw, h / ih);
   const dw = iw * f;
   const dh = ih * f;
-  ctx.save();
-  ctx.beginPath();
-  ctx.rect(x, y, w, h);
-  ctx.clip();
   ctx.drawImage(media, x + (w - dw) / 2, y + (h - dh) / 2, dw, dh);
-  ctx.restore();
+}
+
+function drawBranding(width, height) {
+  const { header, footer } = bars(width, height);
+  const line = Math.max(2, even(header * 0.015));
+  ctx.fillStyle = PLATE;
+  ctx.fillRect(0, 0, width, header);
+  ctx.fillStyle = LINE;
+  ctx.fillRect(0, header - line, width, line);
+  if (logo.complete && logo.naturalWidth) {
+    const pad = width * 0.026;
+    const drawH = header * 0.86;
+    const aspect = logo.naturalWidth / logo.naturalHeight;
+    let drawW = drawH * aspect;
+    if (drawW > width - pad * 2) drawW = width - pad * 2;
+    const fittedH = drawW / aspect;
+    ctx.drawImage(logo, pad, (header - fittedH) / 2, drawW, fittedH);
+  }
+  ctx.fillStyle = PLATE;
+  ctx.fillRect(0, height - footer, width, footer);
+  ctx.fillStyle = LINE;
+  ctx.fillRect(0, height - footer, width, line);
+  ctx.fillStyle = "#2E3192";
+  ctx.fillRect(0, height - line, width, line);
+  let fontSize = Math.max(12, footer * 0.28);
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.font = `700 ${fontSize}px Arial, Helvetica, sans-serif`;
+  const limit = width * 0.88;
+  while (fontSize > 11 && ctx.measureText(FOOTER_TEXT).width > limit) {
+    fontSize *= 0.92;
+    ctx.font = `700 ${fontSize}px Arial, Helvetica, sans-serif`;
+  }
+  ctx.fillStyle = INK;
+  ctx.fillText(FOOTER_TEXT, width / 2, height - footer / 2);
 }
 
 function draw() {
-  const [w, h, top, bottom] = sizes[$("format").value];
+  const { w, h } = designSize();
   if (canvas.width !== w) canvas.width = w;
   if (canvas.height !== h) canvas.height = h;
-  ctx.fillStyle = "#171a51";
+  ctx.fillStyle = NAVY;
   ctx.fillRect(0, 0, w, h);
+  const frame = bars(w, h);
   const s = scenes[selected];
-  if (s && s.ready) {
-    if (s.type === "image" || s.el.readyState >= 2) fit(s.el, 0, top, w, h - top - bottom);
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(frame.x, frame.y, frame.w, frame.h);
+  ctx.clip();
+  if (s && s.ready && (s.type === "image" || s.el.readyState >= 2)) {
+    cover(s.el, frame.x, frame.y, frame.w, frame.h);
   } else if (!s) {
+    ctx.fillStyle = "#071525";
+    ctx.fillRect(frame.x, frame.y, frame.w, frame.h);
     ctx.textAlign = "center";
     ctx.fillStyle = "#d8d9f6";
     ctx.font = "24px Arial";
     ctx.fillText("Add photos or videos", w / 2, h / 2);
   }
-  if (frame.complete && frame.naturalWidth) ctx.drawImage(frame, 0, 0, w, h);
+  ctx.restore();
+  drawBranding(w, h);
 }
 
 function cards() {
@@ -78,7 +156,6 @@ function cards() {
     input.max = "30";
     input.step = ".5";
     input.value = s.seconds;
-    input.title = "Seconds";
     input.oninput = () => {
       s.seconds = Math.min(30, Math.max(0.5, Number(input.value) || 3));
     };
@@ -123,8 +200,7 @@ function remove(i) {
   stop();
   URL.revokeObjectURL(scenes[i].url);
   scenes.splice(i, 1);
-  selected = Math.min(selected, scenes.length - 1);
-  selected = Math.max(0, selected);
+  selected = Math.max(0, Math.min(selected, scenes.length - 1));
   cards();
   draw();
 }
@@ -143,9 +219,7 @@ $("files").onchange = (e) => {
   for (const file of e.target.files) {
     const name = (file.name || "").toLowerCase();
     const type =
-      /(\.mp4|\.mov|\.webm|\.mkv)$/.test(name) || file.type.startsWith("video/")
-        ? "video"
-        : "image";
+      /(\.mp4|\.mov|\.webm|\.mkv)$/.test(name) || file.type.startsWith("video/") ? "video" : "image";
     const url = URL.createObjectURL(file);
     const el = type === "image" ? new Image() : document.createElement("video");
     const s = { file, url, type, el, seconds: type === "image" ? 3 : 5, ready: false };
@@ -188,7 +262,7 @@ $("files").onchange = (e) => {
   selected = scenes.length - fresh.length;
   cards();
   draw();
-  status(`${fresh.length} file(s) added. Pick a social size, then Create MP4.`);
+  status(`${fresh.length} file(s) added. Pick Instagram Reel, then Create file.`);
   $("files").value = "";
 };
 
@@ -249,45 +323,140 @@ document.querySelectorAll(".fmt").forEach((btn) => {
   btn.onclick = () => {
     document.querySelectorAll(".fmt").forEach((b) => b.classList.toggle("on", b === btn));
     $("format").value = btn.dataset.format;
-    frameLoad();
+    updatePixelLabel();
+    draw();
+  };
+});
+$("resolution").onchange = updatePixelLabel;
+["kindMp4", "kindPng"].forEach((id) => {
+  $(id).onclick = () => {
+    exportKind = $(id).dataset.kind;
+    $("kindMp4").classList.toggle("on", exportKind === "mp4");
+    $("kindPng").classList.toggle("on", exportKind === "png");
+    updatePixelLabel();
   };
 });
 
-async function loadFfmpeg() {
-  if (ffmpegReady) return;
-  status("Loading video engine in the browser… first time can take a minute.");
-  const base = "https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/esm";
-  await ffmpeg.load({
-    coreURL: await toBlobURL(base + "/ffmpeg-core.js", "text/javascript"),
-    wasmURL: await toBlobURL(base + "/ffmpeg-core.wasm", "application/wasm"),
-    classWorkerURL: await toBlobURL(
-      "https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.10/dist/esm/worker.js",
-      "text/javascript"
-    ),
+function setCanvasSize(w, h) {
+  if (canvas.width !== w) canvas.width = w;
+  if (canvas.height !== h) canvas.height = h;
+}
+
+function drawAtSize(w, h, scene) {
+  setCanvasSize(w, h);
+  ctx.fillStyle = NAVY;
+  ctx.fillRect(0, 0, w, h);
+  const frame = bars(w, h);
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(frame.x, frame.y, frame.w, frame.h);
+  ctx.clip();
+  if (scene && scene.ready && (scene.type === "image" || scene.el.readyState >= 2)) {
+    cover(scene.el, frame.x, frame.y, frame.w, frame.h);
+  }
+  ctx.restore();
+  drawBranding(w, h);
+}
+
+function blobDownload(blob, name) {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  a.className = "download";
+  a.textContent = "⬇ Download " + name;
+  $("result").replaceChildren(a);
+}
+
+async function exportPng(w, h) {
+  drawAtSize(w, h, scenes[selected] || scenes[0]);
+  const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
+  if (!blob) throw Error("Could not make PNG");
+  blobDownload(blob, "Topping_Teaser.png");
+  status(`PNG ready · ${w} × ${h}`);
+}
+
+async function pickAvcCodec(width, height) {
+  if (typeof VideoEncoder === "undefined") return null;
+  const codecs = ["avc1.640028", "avc1.4d0028", "avc1.42E01E"];
+  for (const codec of codecs) {
+    const support = await VideoEncoder.isConfigSupported({
+      codec,
+      width,
+      height,
+      bitrate: 4_000_000,
+      avc: { format: "avc" },
+    });
+    if (support.supported) return codec;
+  }
+  return null;
+}
+
+async function seekVideo(el, time) {
+  if (!(el instanceof HTMLVideoElement)) return;
+  const target = Math.min(Math.max(0, time), Math.max(0, (el.duration || 0) - 0.04));
+  if (Math.abs(el.currentTime - target) < 0.03 && el.readyState >= 2) return;
+  await new Promise((resolve) => {
+    const done = () => {
+      el.removeEventListener("seeked", done);
+      resolve();
+    };
+    el.addEventListener("seeked", done);
+    el.currentTime = target;
   });
-  ffmpegReady = true;
 }
 
-function fileExt(file, type) {
-  const match = (file.name || "").toLowerCase().match(/\.[a-z0-9]+$/);
-  if (match) return match[0];
-  return type === "image" ? ".jpg" : ".mp4";
+async function exportMp4(w, h) {
+  const codec = await pickAvcCodec(w, h);
+  if (!codec) throw Error("This browser cannot encode MP4. Use PNG, or try Chrome/Safari.");
+  const fps = 30;
+  const duration = scenes.reduce((sum, s) => sum + Math.min(30, Math.max(0.5, Number(s.seconds) || 3)), 0);
+  const frameCount = Math.max(1, Math.round(duration * fps));
+  const frameDuration = Math.round(1_000_000 / fps);
+  const bitrate = Math.round(5_000_000 * Math.max(0.45, (w * h) / (1080 * 1920)));
+  const target = new ArrayBufferTarget();
+  const muxer = new Muxer({
+    target,
+    video: { codec: "avc", width: w, height: h, frameRate: fps },
+    fastStart: "in-memory",
+    firstTimestampBehavior: "offset",
+  });
+  const encoder = new VideoEncoder({
+    output: (chunk, meta) => muxer.addVideoChunk(chunk, meta),
+    error: () => undefined,
+  });
+  encoder.configure({ codec, width: w, height: h, bitrate, framerate: fps, avc: { format: "avc" } });
+
+  let cursor = 0;
+  const spans = scenes.map((s) => {
+    const seconds = Math.min(30, Math.max(0.5, Number(s.seconds) || 3));
+    const start = cursor;
+    cursor += seconds;
+    return { s, start, end: cursor };
+  });
+
+  for (let index = 0; index < frameCount; index += 1) {
+    const time = index / fps;
+    const span = spans.find((item) => time >= item.start && time < item.end) || spans[spans.length - 1];
+    if (span.s.type === "video") await seekVideo(span.s.el, time - span.start);
+    drawAtSize(w, h, span.s);
+    const timestamp = index * frameDuration;
+    const frame = new VideoFrame(canvas, { timestamp, duration: frameDuration });
+    encoder.encode(frame, { keyFrame: index % (fps * 2) === 0 });
+    frame.close();
+    if (index % 8 === 0) status(`Rendering MP4… ${Math.round(((index + 1) / frameCount) * 100)}% · ${w} × ${h}`);
+    if (encoder.encodeQueueSize > 8) {
+      await new Promise((resolve) => encoder.addEventListener("dequeue", () => resolve(), { once: true }));
+    }
+  }
+  await encoder.flush();
+  muxer.finalize();
+  encoder.close();
+  const blob = new Blob([target.buffer], { type: "video/mp4" });
+  blobDownload(blob, "Topping_Teaser.mp4");
+  status(`MP4 ready · ${w} × ${h}${w === 1080 && h === 1920 ? " · Instagram Reel" : ""}`);
 }
 
-async function probeAudio(inputName) {
-  let log = "";
-  const onLog = ({ message }) => {
-    log += message + "\n";
-  };
-  ffmpeg.on("log", onLog);
-  try {
-    await ffmpeg.exec(["-hide_banner", "-i", inputName, "-f", "null", "-t", "0.05", "-"]);
-  } catch {}
-  ffmpeg.off("log", onLog);
-  return /Audio:/.test(log);
-}
-
-async function renderMp4() {
+$("render").onclick = async () => {
   if (!scenes.length) {
     status("Add at least one scene.");
     return;
@@ -296,111 +465,23 @@ async function renderMp4() {
   button.disabled = true;
   stop();
   $("result").replaceChildren();
+  const { w, h } = exportPixels();
   try {
-    await loadFfmpeg();
-    const fmt = $("format").value;
-    const [width, height, header, footer] = sizes[fmt];
-    let mediaHeight = height - header - footer;
-    if (mediaHeight % 2) mediaHeight -= 1;
-    const overlayBytes = await fetchFile("assets/frame_" + fmt + ".png");
-    await ffmpeg.writeFile("overlay.png", overlayBytes);
-    const parts = [];
-    for (let i = 0; i < scenes.length; i++) {
-      const s = scenes[i];
-      const seconds = Math.min(30, Math.max(0.5, Number(s.seconds) || 3));
-      const duration = seconds.toFixed(3);
-      const inputName = `in_${i}${fileExt(s.file, s.type)}`;
-      const outName = `scene_${String(i).padStart(2, "0")}.mp4`;
-      status(`Creating scene ${i + 1} of ${scenes.length}…`);
-      await ffmpeg.writeFile(inputName, await fetchFile(s.file));
-      const silent = s.type === "image" || !(await probeAudio(inputName));
-      const args = ["-hide_banner", "-y"];
-      if (s.type === "image") args.push("-loop", "1", "-framerate", "30", "-t", duration, "-i", inputName);
-      else args.push("-t", duration, "-i", inputName);
-      args.push("-loop", "1", "-t", duration, "-i", "overlay.png");
-      if (silent) args.push("-f", "lavfi", "-t", duration, "-i", "anullsrc=r=44100:cl=stereo");
-      const audioInput = silent ? 2 : 0;
-      const videoFilter =
-        `[0:v]fps=30,scale=${width}:${mediaHeight}:force_original_aspect_ratio=increase,` +
-        `crop=${width}:${mediaHeight},pad=${width}:${height}:0:${header}:color=0x171A51[base];` +
-        `[base][1:v]overlay=0:0:eof_action=repeat:shortest=1,setsar=1,format=yuv420p[v]`;
-      const audioFilter =
-        `[${audioInput}:a]aresample=44100,aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo,` +
-        `apad,atrim=duration=${duration},asetpts=PTS-STARTPTS[a]`;
-      args.push(
-        "-filter_complex",
-        videoFilter + ";" + audioFilter,
-        "-map",
-        "[v]",
-        "-map",
-        "[a]",
-        "-t",
-        duration,
-        "-c:v",
-        "libx264",
-        "-preset",
-        "ultrafast",
-        "-crf",
-        "23",
-        "-r",
-        "30",
-        "-pix_fmt",
-        "yuv420p",
-        "-c:a",
-        "aac",
-        "-b:a",
-        "128k",
-        "-ar",
-        "44100",
-        "-ac",
-        "2",
-        outName
-      );
-      const code = await ffmpeg.exec(args);
-      if (code) throw Error("Could not encode scene " + (i + 1));
-      parts.push(outName);
-    }
-    status("Joining scenes…");
-    await ffmpeg.writeFile("list.txt", parts.map((p) => `file '${p}'`).join("\n"));
-    const join = await ffmpeg.exec([
-      "-hide_banner",
-      "-y",
-      "-f",
-      "concat",
-      "-safe",
-      "0",
-      "-i",
-      "list.txt",
-      "-c:v",
-      "libx264",
-      "-preset",
-      "ultrafast",
-      "-crf",
-      "23",
-      "-c:a",
-      "aac",
-      "-b:a",
-      "128k",
-      "-movflags",
-      "+faststart",
-      "Topping_Teaser.mp4",
-    ]);
-    if (join) throw Error("Could not join scenes");
-    const data = await ffmpeg.readFile("Topping_Teaser.mp4");
-    const blob = new Blob([data.buffer], { type: "video/mp4" });
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = "Topping_Teaser.mp4";
-    a.className = "download";
-    a.textContent = "⬇ Save MP4 to this computer";
-    $("result").append(a);
-    status("MP4 is ready. Click the orange Save MP4 button below.");
+    if (exportKind === "png") await exportPng(w, h);
+    else await exportMp4(w, h);
   } catch (err) {
     status("Export failed: " + (err.message || err));
+    if (exportKind === "mp4") {
+      try {
+        await exportPng(w, h);
+        status("MP4 is not available here. PNG still of the same frame is ready.");
+      } catch {}
+    }
   } finally {
+    draw();
     button.disabled = false;
   }
-}
+};
 
-$("render").onclick = renderMp4;
-frameLoad();
+updatePixelLabel();
+draw();
