@@ -1,4 +1,6 @@
 import { IMAGE_DURATIONS } from "../media/mediaTypes";
+import { SocialTargetPicker } from "../formats/SocialTargetPicker";
+import { CardCopyFields } from "../templates/PortraitPostPanel";
 import { useSettings } from "../hooks/useSettings";
 import { useStudio } from "../hooks/useStudio";
 import { ToolBody } from "./EditorSidebar";
@@ -12,6 +14,12 @@ export function EditorInspector() {
     <aside className="hidden min-h-0 flex-col border-s border-line bg-panel lg:flex" aria-label={t("inspector")}>
       <div className="border-b border-line px-3 py-2 text-xs tracking-wide text-muted uppercase">{t("inspector")}</div>
       <div className="min-h-0 flex-1 overflow-auto p-3">
+        <div className="mb-4">
+          <SocialTargetPicker />
+        </div>
+        <div className="mb-4">
+          <CardCopyFields />
+        </div>
         {clip && asset?.kind === "image" && (tool === "media" || tool === "timeline") ? (
           <div className="mb-4">
             <p className="mb-2 text-xs text-muted">{t("imageDuration")}</p>
@@ -32,7 +40,7 @@ export function EditorInspector() {
         {clip && asset?.kind === "video" && (tool === "media" || tool === "timeline") ? (
           <p className="mb-3 text-xs text-muted">{t("videoDuration")}</p>
         ) : null}
-        <ToolBody detailed />
+        {tool === "format" || tool === "branding" ? null : <ToolBody detailed />}
       </div>
     </aside>
   );

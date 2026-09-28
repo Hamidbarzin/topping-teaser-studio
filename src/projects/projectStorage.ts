@@ -1,4 +1,6 @@
-import { createBranding } from "../branding/brandingPresets";
+import { createBranding, normalizeBranding } from "../branding/brandingPresets";
+import { createPortraitPost, normalizePortraitPost } from "../templates/portraitPost";
+import { findSocialPreset } from "../formats/formatPresets";
 import type { AppSettings, ExportQuality, MediaAsset, Project, StoredMedia } from "../types";
 import { createId } from "../utils/id";
 
@@ -9,10 +11,10 @@ const SETTINGS_KEY = "topping-settings";
 const DEFAULT_SETTINGS: AppSettings = {
   language: "en",
   theme: "dark",
-  defaultFormatId: "reel",
+  defaultFormatId: "instagram-post",
   defaultExportQuality: "high",
   autoSave: true,
-  brandingEnabledByDefault: true,
+  brandingEnabledByDefault: false,
 };
 
 function requestToPromise<T>(request: IDBRequest<T>): Promise<T> {
@@ -55,30 +57,64 @@ export function writeSettings(settings: AppSettings): void {
   localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
 }
 
+export function normalizeProject(raw: Project): Project {
+  let branding = createBranding(false);
+  try {
+    if (raw.branding) branding = { ...normalizeBranding(raw.branding), enabled: false };
+  } catch {
+    branding = createBranding(false);
+  }
+  const fps = raw.exportSettings?.fps;
+  const quality = raw.exportSettings?.quality;
+  const preset = findSocialPreset(raw.formatId, raw.exportSettings?.fileFormat, raw.exportSettings?.platform);
+  return {
+    ...raw,
+    name: raw.name || "Untitled",
+    formatId: preset.id,
+    customWidth: preset.width,
+    customHeight: preset.height,
+    clips: Array.isArray(raw.clips) ? raw.clips : [],
+    texts: Array.isArray(raw.texts) ? raw.texts : [],
+    branding,
+    post: normalizePortraitPost(raw.post),
+    exportSettings: {
+      resolution: "1080p",
+      fps: fps === 24 || fps === 60 ? fps : 30,
+      quality: quality === "low" || quality === "medium" ? quality : "high",
+      fileFormat: preset.output,
+      platform: preset.platform,
+    },
+  };
+}
+
 export function createEmptyProject(settings: AppSettings, name: string): Project {
   const now = Date.now();
+  const preset = findSocialPreset(settings.defaultFormatId);
   return {
     id: createId(),
     name,
     createdAt: now,
     updatedAt: now,
-    formatId: settings.defaultFormatId,
-    customWidth: 1080,
-    customHeight: 1920,
+    formatId: preset.id,
+    customWidth: preset.width,
+    customHeight: preset.height,
     clips: [],
-    branding: createBranding(settings.brandingEnabledByDefault),
+    branding: createBranding(false),
     texts: [],
+    post: createPortraitPost("cta"),
     exportSettings: {
       resolution: "1080p",
       fps: 30,
       quality: settings.defaultExportQuality,
+      fileFormat: preset.output,
+      platform: preset.platform,
     },
   };
 }
 
 export async function saveProject(project: Project): Promise<void> {
   const db = await openDb();
-  const next = { ...project, updatedAt: Date.now() };
+  const next = { ...normalizeProject(project), updatedAt: Date.now() };
   await requestToPromise(db.transaction("projects", "readwrite").objectStore("projects").put(next));
   db.close();
 }
@@ -87,14 +123,14 @@ export async function listProjects(): Promise<Project[]> {
   const db = await openDb();
   const rows = await requestToPromise(db.transaction("projects").objectStore("projects").getAll());
   db.close();
-  return (rows as Project[]).sort((a, b) => b.updatedAt - a.updatedAt);
+  return (rows as Project[]).map(normalizeProject).sort((a, b) => b.updatedAt - a.updatedAt);
 }
 
 export async function getProject(id: string): Promise<Project | null> {
   const db = await openDb();
   const row = await requestToPromise(db.transaction("projects").objectStore("projects").get(id));
   db.close();
-  return (row as Project | undefined) ?? null;
+  return row ? normalizeProject(row as Project) : null;
 }
 
 export async function deleteProject(id: string): Promise<void> {
@@ -140,7 +176,15 @@ export async function loadProjectMedia(projectId: string): Promise<MediaAsset[]>
     height: row.height,
     objectUrl: URL.createObjectURL(row.blob),
     thumbnailUrl: URL.createObjectURL(row.thumbnail),
+    blob: row.blob,
   }));
+}
+
+export async function loadMediaBlob(id: string): Promise<Blob | null> {
+  const db = await openDb();
+  const row = (await requestToPromise(db.transaction("media").objectStore("media").get(id))) as StoredMedia | undefined;
+  db.close();
+  return row?.blob ?? null;
 }
 
 export async function duplicateProjectRecord(source: Project, name: string): Promise<Project> {
@@ -150,6 +194,7 @@ export async function duplicateProjectRecord(source: Project, name: string): Pro
   copy.customHeight = source.customHeight;
   copy.branding = structuredClone(source.branding);
   copy.texts = source.texts.map((text) => ({ ...text, id: createId() }));
+  copy.post = structuredClone(source.post ?? copy.post);
   copy.exportSettings = { ...source.exportSettings };
   const db = await openDb();
   const media = (await requestToPromise(
@@ -174,7 +219,7 @@ export async function duplicateProjectRecord(source: Project, name: string): Pro
     transition: { ...clip.transition },
   }));
   await saveProject(copy);
-  return copy;
+  return normalizeProject(copy);
 }
 
 export function qualityBitrate(quality: ExportQuality, pixels: number): number {

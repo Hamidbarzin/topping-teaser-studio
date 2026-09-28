@@ -45,6 +45,7 @@ export type ExportFileFormat = "mp4" | "png";
 export type ExportResolution = "720p" | "1080p";
 export type ExportFps = 24 | 30 | 60;
 export type ExportQuality = "low" | "medium" | "high";
+export type SocialPlatform = "instagram" | "linkedin" | "facebook" | "youtube" | "tiktok";
 export type Language = "en" | "fa";
 export type ThemeName = "dark" | "light";
 
@@ -123,6 +124,22 @@ export interface ExportSettings {
   resolution: ExportResolution;
   fps: ExportFps;
   quality: ExportQuality;
+  fileFormat: ExportFileFormat;
+  platform: SocialPlatform;
+}
+
+export type PostFooterStyle = "button" | "urlArrow";
+export type PortraitVariantId = "service" | "tracking" | "cta";
+
+export interface PortraitPostCopy {
+  variantId: PortraitVariantId;
+  tag: string;
+  badge: string;
+  headline1: string;
+  headline2: string;
+  cta: string;
+  website: string;
+  footerStyle: PostFooterStyle;
 }
 
 export interface Project {
@@ -136,6 +153,7 @@ export interface Project {
   clips: TimelineClip[];
   branding: BrandingSettings;
   texts: TextOverlay[];
+  post: PortraitPostCopy;
   exportSettings: ExportSettings;
 }
 
@@ -150,6 +168,7 @@ export interface MediaAsset {
   height: number;
   objectUrl: string;
   thumbnailUrl: string;
+  blob?: Blob;
 }
 
 export interface StoredMedia {

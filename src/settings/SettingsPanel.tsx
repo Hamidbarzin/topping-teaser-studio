@@ -27,7 +27,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
         <Field label={t("defaultFormat")}>
           <SelectInput value={settings.defaultFormatId} aria-label={t("defaultFormat")} onChange={(event) => updateSettings({ defaultFormatId: event.target.value })}>
             {FORMAT_PRESETS.map((preset) => (
-              <option key={preset.id} value={preset.id}>{t(preset.labelKey)}</option>
+              <option key={preset.id} value={preset.id}>{t(preset.specKey)}</option>
             ))}
           </SelectInput>
         </Field>

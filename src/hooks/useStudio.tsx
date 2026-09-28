@@ -20,9 +20,15 @@ import type {
 } from "../types";
 import { createId } from "../utils/id";
 import { inspectFile, loadImage, loadVideoMeta, makeThumbnail } from "../utils/media";
-import { deleteMedia, saveMedia, saveProject, loadProjectMedia } from "../projects/projectStorage";
-import { normalizeBranding } from "../branding/brandingPresets";
+import { deleteMedia, normalizeProject, saveMedia, saveProject, loadProjectMedia } from "../projects/projectStorage";
 import { sanitizeText } from "../utils/sanitize";
+import { COMPANY } from "../branding/company";
+import { studioFilename, dataUrlToBlob, saveToDownloads } from "../export/saveStudioFile";
+import { exportTeaser } from "../export/VideoExporter";
+import { resolveFormatSize } from "../formats/formatPresets";
+import { loadVariantPoster, PORTRAIT_VARIANT_IDS, PORTRAIT_VARIANTS } from "../templates/portraitPost";
+import { layoutClips } from "../utils/timeline";
+import { renderFrame } from "../utils/renderFrame";
 import { useSettings } from "./useSettings";
 import { useToast } from "./useToast";
 
@@ -33,6 +39,7 @@ interface StudioValue {
   selectedClipId: string | null;
   selectedTextId: string | null;
   elementsRef: RefObject<Map<string, HTMLImageElement | HTMLVideoElement>>;
+  previewCanvasRef: RefObject<HTMLCanvasElement | null>;
   drawables: Map<string, DrawableMedia>;
   setTool: (tool: ToolId) => void;
   selectClip: (id: string | null) => void;
@@ -49,6 +56,13 @@ interface StudioValue {
   addText: () => void;
   removeText: (textId: string) => void;
   save: () => Promise<void>;
+  exportNow: () => void;
+  exportMp4: () => Promise<void>;
+  downloadPreviewPng: () => boolean;
+  exportAllPosts: () => Promise<void>;
+  lastExport: { kind: "png" | "mp4"; filename: string; blob: Blob; href: string } | null;
+  exportProgress: number | null;
+  clearLastExport: () => void;
   busy: boolean;
 }
 
@@ -57,18 +71,18 @@ const StudioContext = createContext<StudioValue | null>(null);
 export function StudioProvider({ project: initial, children }: { project: Project; children: ReactNode }) {
   const { t, settings } = useSettings();
   const { notify } = useToast();
-  const [project, setProject] = useState(() => ({
-    ...initial,
-    branding: normalizeBranding(initial.branding),
-  }));
+  const [project, setProject] = useState(() => normalizeProject(initial));
   const [media, setMedia] = useState<MediaAsset[]>([]);
   const [tool, setTool] = useState<ToolId>("media");
   const [selectedClipId, setSelectedClipId] = useState<string | null>(null);
   const [selectedTextId, setSelectedTextId] = useState<string | null>(null);
+  const [lastExport, setLastExport] = useState<{ kind: "png" | "mp4"; filename: string; blob: Blob; href: string } | null>(null);
+  const [exportProgress, setExportProgress] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [readyTick, setReadyTick] = useState(0);
   const dirty = useRef(false);
   const elementsRef = useRef(new Map<string, HTMLImageElement | HTMLVideoElement>());
+  const previewCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const projectRef = useRef(project);
   projectRef.current = project;
 
@@ -167,6 +181,126 @@ export function StudioProvider({ project: initial, children }: { project: Projec
     }
   }, [notify, t]);
 
+  const downloadPreviewPng = useCallback(() => {
+    const canvas = previewCanvasRef.current;
+    if (!canvas || canvas.width < 2 || canvas.height < 2) {
+      notify(t("exportFailed"), "error");
+      return false;
+    }
+    const current = projectRef.current;
+    const filename = studioFilename(current.name, "png", current.formatId || current.exportSettings.platform || "instagram");
+    try {
+      const dataUrl = canvas.toDataURL("image/png");
+      const blob = dataUrlToBlob(dataUrl);
+      setLastExport((previous) => {
+        if (previous?.kind === "mp4") URL.revokeObjectURL(previous.href);
+        return { kind: "png", filename, blob, href: dataUrl };
+      });
+      void saveToDownloads(blob, filename).then((saved) => {
+        if (saved) notify(t("savedToFolder", { path: saved }));
+      });
+      return true;
+    } catch {
+      notify(t("exportFailed"), "error");
+      return false;
+    }
+  }, [notify, t]);
+
+  const exportAllPosts = useCallback(async () => {
+    const current = projectRef.current;
+    const size = resolveFormatSize(current.formatId, current.customWidth, current.customHeight);
+    const canvas = document.createElement("canvas");
+    canvas.width = size.width;
+    canvas.height = size.height;
+    const context = canvas.getContext("2d", { alpha: false });
+    if (!context) {
+      notify(t("exportFailed"), "error");
+      return;
+    }
+    const logo = await loadLogoImage();
+    const layout = layoutClips(current.clips);
+    let lastHref = "";
+    let lastBlob: Blob | null = null;
+    let lastName = "";
+    for (const id of PORTRAIT_VARIANT_IDS) {
+      const stockPoster = await loadVariantPoster(id);
+      renderFrame(context, {
+        width: size.width,
+        height: size.height,
+        timeMs: 0,
+        items: layout.items,
+        media: drawables,
+        branding: current.branding,
+        texts: current.texts,
+        logo,
+        formatId: current.formatId,
+        post: PORTRAIT_VARIANTS[id],
+        stockPoster,
+      });
+      const dataUrl = canvas.toDataURL("image/png");
+      const blob = dataUrlToBlob(dataUrl);
+      const filename = studioFilename(`${current.name}_${id}`, "png", current.exportSettings.platform || "instagram");
+      await saveToDownloads(blob, filename);
+      lastHref = dataUrl;
+      lastBlob = blob;
+      lastName = filename;
+    }
+    if (lastBlob) {
+      setLastExport((previous) => {
+        if (previous?.kind === "mp4") URL.revokeObjectURL(previous.href);
+        return { kind: "png", filename: lastName, blob: lastBlob, href: lastHref };
+      });
+    }
+    notify(t("exportAllSaved"));
+  }, [drawables, notify, t]);
+
+  const exportMp4 = useCallback(async () => {
+    const current = projectRef.current;
+    const project = {
+      ...current,
+      exportSettings: { ...current.exportSettings, fileFormat: "mp4" as const },
+    };
+    patchProject(() => project);
+    setExportProgress(0.01);
+    try {
+      const logo = await loadLogoImage();
+      const stockPoster = await loadVariantPoster(project.post.variantId);
+      const result = await exportTeaser({
+        project,
+        media: drawables,
+        elements: elementsRef.current,
+        logo,
+        stockPoster,
+        settings: project.exportSettings,
+        format: "mp4",
+        onProgress: setExportProgress,
+      });
+      if (result.blob.size < 32) throw new Error("mp4");
+      const filename = studioFilename(project.name, result.extension === "png" ? "mp4" : result.extension, project.formatId || project.exportSettings.platform);
+      const href = URL.createObjectURL(result.blob);
+      setLastExport((previous) => {
+        if (previous?.kind === "mp4") URL.revokeObjectURL(previous.href);
+        return { kind: "mp4", filename, blob: result.blob, href };
+      });
+      setExportProgress(1);
+      void saveToDownloads(result.blob, filename).then((saved) => {
+        if (saved) notify(t("savedToFolder", { path: saved }));
+        else notify(t("exportReady"));
+      });
+    } catch {
+      setExportProgress(null);
+      notify(t("mp4Unavailable"), "error");
+    }
+  }, [drawables, notify, patchProject, t]);
+
+  const exportNow = useCallback(() => {
+    if (projectRef.current.exportSettings.fileFormat === "mp4") {
+      void exportMp4();
+      return;
+    }
+    downloadPreviewPng();
+  }, [downloadPreviewPng, exportMp4]);
+
   useEffect(() => {
     if (!settings.autoSave || !dirty.current) return undefined;
     const timer = window.setTimeout(() => {
@@ -230,6 +364,7 @@ export function StudioProvider({ project: initial, children }: { project: Projec
               height,
               objectUrl,
               thumbnailUrl: URL.createObjectURL(thumbnail),
+              blob: file,
             };
             const clip: TimelineClip = {
               id: createId(),
@@ -381,6 +516,7 @@ export function StudioProvider({ project: initial, children }: { project: Projec
       selectedClipId,
       selectedTextId,
       elementsRef,
+      previewCanvasRef,
       drawables,
       setTool,
       selectClip: setSelectedClipId,
@@ -397,6 +533,19 @@ export function StudioProvider({ project: initial, children }: { project: Projec
       addText,
       removeText,
       save,
+      exportNow,
+      exportMp4,
+      downloadPreviewPng,
+      exportAllPosts,
+      lastExport,
+      exportProgress,
+      clearLastExport: () => {
+        setLastExport((previous) => {
+          if (previous?.kind === "mp4") URL.revokeObjectURL(previous.href);
+          return null;
+        });
+        setExportProgress(null);
+      },
       busy,
     }),
     [
@@ -417,6 +566,12 @@ export function StudioProvider({ project: initial, children }: { project: Projec
       addText,
       removeText,
       save,
+      exportNow,
+      exportMp4,
+      downloadPreviewPng,
+      exportAllPosts,
+      lastExport,
+      exportProgress,
       busy,
     ],
   );
@@ -428,4 +583,14 @@ export function useStudio(): StudioValue {
   const value = useContext(StudioContext);
   if (!value) throw new Error("Studio missing");
   return value;
+}
+
+function loadLogoImage(): Promise<HTMLImageElement | null> {
+  return new Promise((resolve) => {
+    const image = new Image();
+    image.crossOrigin = "anonymous";
+    image.onload = () => resolve(image);
+    image.onerror = () => resolve(null);
+    image.src = COMPANY.logoSrc;
+  });
 }

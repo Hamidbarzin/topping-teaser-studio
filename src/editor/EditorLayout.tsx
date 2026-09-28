@@ -6,6 +6,7 @@ import { EditorInspector } from "./EditorInspector";
 import { EditorSidebar, ToolBody } from "./EditorSidebar";
 import { Timeline } from "../timeline/Timeline";
 import { ExportPanel } from "../export/ExportPanel";
+import { ExportResultOverlay } from "../export/ExportResultOverlay";
 import { SettingsPanel } from "../settings/SettingsPanel";
 import { ProjectManager } from "../projects/ProjectManager";
 import { usePlayback } from "../hooks/usePlayback";
@@ -57,7 +58,7 @@ export function EditorLayout({
         onOpen={() => setProjectsOpen(true)}
         onExport={() => {
           playback.setPlaying(false);
-          setExportOpen(true);
+          studio.exportNow();
         }}
         onSettings={() => setSettingsOpen(true)}
       />
@@ -93,6 +94,7 @@ export function EditorLayout({
         onMute={() => playback.setMuted((value) => !value)}
         onSeek={playback.seek}
       />
+      {studio.lastExport || studio.exportProgress !== null ? <ExportResultOverlay /> : null}
       {exportOpen ? <ExportPanel onClose={() => setExportOpen(false)} /> : null}
       {settingsOpen ? <SettingsPanel onClose={() => setSettingsOpen(false)} /> : null}
       <ProjectManager

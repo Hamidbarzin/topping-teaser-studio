@@ -17,9 +17,11 @@ export type FileIssue = "unsupported" | "large";
 export function inspectFile(file: File): { kind: MediaKind } | { error: FileIssue } {
   if (file.size > MAX_BYTES) return { error: "large" };
   const extension = file.name.split(".").pop()?.toLowerCase() ?? "";
-  const kind = EXTENSIONS[extension];
-  if (!kind) return { error: "unsupported" };
-  return { kind };
+  const byName = EXTENSIONS[extension];
+  if (byName) return { kind: byName };
+  if (file.type.startsWith("image/")) return { kind: "image" };
+  if (file.type.startsWith("video/")) return { kind: "video" };
+  return { error: "unsupported" };
 }
 
 export function loadImage(url: string): Promise<HTMLImageElement> {

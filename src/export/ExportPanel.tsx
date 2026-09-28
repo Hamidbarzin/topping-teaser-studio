@@ -1,58 +1,84 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Field, SelectInput } from "../components/Controls";
-import { exportPixelSize, resolveFormatSize } from "../formats/formatPresets";
+import { findSocialPreset, resolveFormatSize } from "../formats/formatPresets";
+import { SocialTargetPicker } from "../formats/SocialTargetPicker";
 import { useSettings } from "../hooks/useSettings";
 import { useStudio } from "../hooks/useStudio";
 import { useToast } from "../hooks/useToast";
-import type { ExportFileFormat, ExportFps, ExportQuality, ExportResolution } from "../types";
+import type { ExportFps, ExportQuality } from "../types";
 import { COMPANY } from "../branding/company";
+import { studioFilename } from "./saveStudioFile";
 import { exportTeaser } from "./VideoExporter";
+import { loadVariantPoster, normalizePortraitPost } from "../templates/portraitPost";
 
 export function ExportPanel({ onClose }: { onClose: () => void }) {
   const { t } = useSettings();
   const { notify } = useToast();
-  const { project, patchProject, drawables, elementsRef } = useStudio();
+  const { project, patchProject, drawables, elementsRef, previewCanvasRef, downloadPreviewPng } = useStudio();
   const [progress, setProgress] = useState<number | null>(null);
-  const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
-  const [extension, setExtension] = useState<ExportFileFormat>("mp4");
-  const [format, setFormat] = useState<ExportFileFormat>("mp4");
+  const [file, setFile] = useState<File | null>(null);
+  const [href, setHref] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const preset = findSocialPreset(project.formatId, project.exportSettings.fileFormat, project.exportSettings.platform);
+  const format = preset.output;
+  const size = resolveFormatSize(project.formatId, project.customWidth, project.customHeight);
 
-  const update = (patch: Partial<typeof project.exportSettings>) => {
-    patchProject((current) => ({ ...current, exportSettings: { ...current.exportSettings, ...patch } }));
-  };
+  useEffect(() => {
+    return () => {
+      if (href) URL.revokeObjectURL(href);
+    };
+  }, [href]);
 
   const render = async () => {
-    if (project.clips.length === 0) {
-      setError(t("exportEmpty"));
-      notify(t("exportEmpty"), "error");
-      return;
-    }
     setError(null);
-    setDownloadUrl((current) => {
+    setFile(null);
+    setHref((current) => {
       if (current) URL.revokeObjectURL(current);
       return null;
     });
-    setProgress(0);
+    setProgress(0.05);
     try {
+      await Promise.race([document.fonts?.ready ?? Promise.resolve(), sleep(800)]);
       const logo = await loadLogo();
-      const result = await exportTeaser({
-        project,
-        media: drawables,
-        elements: elementsRef.current,
-        logo,
-        settings: project.exportSettings,
-        format,
-        onProgress: setProgress,
-      });
+      const stockPoster = await loadVariantPoster(normalizePortraitPost(project.post).variantId);
+      let result;
+      if (format === "png") {
+        const blob = await capturePreviewPng(previewCanvasRef.current, size.width, size.height);
+        if (blob) {
+          result = { blob, extension: "png" as const, mimeType: "image/png" };
+        } else {
+          result = await exportTeaser({
+            project,
+            media: drawables,
+            elements: elementsRef.current,
+            logo,
+            stockPoster,
+            settings: project.exportSettings,
+            format: "png",
+            onProgress: setProgress,
+          });
+        }
+      } else {
+        result = await exportTeaser({
+          project,
+          media: drawables,
+          elements: elementsRef.current,
+          logo,
+          stockPoster,
+          settings: project.exportSettings,
+          format: "mp4",
+          onProgress: setProgress,
+        });
+      }
       if (!result.blob || result.blob.size < 32) {
         throw new Error(t("exportFailed"));
       }
-      setExtension(result.extension);
-      const url = URL.createObjectURL(result.blob);
-      setDownloadUrl(url);
+      const next = await fileFromExport(result.blob, project.name, result.extension, result.mimeType, preset.platform);
+      const url = URL.createObjectURL(next);
+      setFile(next);
+      setHref(url);
       setProgress(1);
-      if (format === "mp4" && result.extension === "png") {
+      if (format === "mp4" && next.name.endsWith(".png")) {
         notify(t("mp4Unavailable"), "error");
       } else {
         notify(t("exportReady"));
@@ -67,50 +93,35 @@ export function ExportPanel({ onClose }: { onClose: () => void }) {
 
   return (
     <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/55 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-label={t("export")}>
-      <div className="w-full max-w-md rounded-3xl border border-white/10 bg-panel p-5 shadow-[var(--brand-shadow)]">
+      <div className="max-h-[92vh] w-full max-w-md overflow-auto rounded-3xl border border-white/10 bg-panel p-5 shadow-[var(--brand-shadow)]">
         <div className="mb-4 flex items-center justify-between">
           <h2 className="font-display text-lg">{t("export")}</h2>
           <button type="button" onClick={onClose} className="rounded-xl border border-line px-3 py-1.5 text-sm">{t("close")}</button>
         </div>
-        <Field label={t("fileFormat")}>
-          <SelectInput value={format} aria-label={t("fileFormat")} onChange={(event) => setFormat(event.target.value as ExportFileFormat)}>
-            <option value="mp4">{t("exportMp4")}</option>
-            <option value="png">{t("exportPng")}</option>
-          </SelectInput>
-        </Field>
-        {(() => {
-          const design = resolveFormatSize(project.formatId, project.customWidth, project.customHeight);
-          const pixels = exportPixelSize(design.width, design.height, project.exportSettings.resolution);
-          const instagram = pixels.width === 1080 && pixels.height === 1920;
-          return (
-            <p className={`mb-3 rounded-2xl bg-navy/50 px-3 py-2 text-sm ${instagram ? "text-cyan" : "text-ink"}`}>
-              {pixels.width} × {pixels.height}
-              {instagram ? " · Instagram Reel" : ""}
-            </p>
-          );
-        })()}
-        <Field label={t("resolution")}>
-          <SelectInput value={project.exportSettings.resolution} aria-label={t("resolution")} onChange={(event) => update({ resolution: event.target.value as ExportResolution })}>
-            <option value="720p">720p</option>
-            <option value="1080p">1080p</option>
-          </SelectInput>
-        </Field>
+        <SocialTargetPicker />
         {format === "mp4" ? <Field label={t("frameRate")}>
-          <SelectInput value={project.exportSettings.fps} aria-label={t("frameRate")} onChange={(event) => update({ fps: Number(event.target.value) as ExportFps })}>
+          <SelectInput value={project.exportSettings.fps} aria-label={t("frameRate")} onChange={(event) => patchProject((current) => ({ ...current, exportSettings: { ...current.exportSettings, fps: Number(event.target.value) as ExportFps } }))}>
             <option value={24}>24 FPS</option>
             <option value={30}>30 FPS</option>
             <option value={60}>60 FPS</option>
           </SelectInput>
         </Field> : null}
         {format === "mp4" ? <Field label={t("quality")}>
-          <SelectInput value={project.exportSettings.quality} aria-label={t("quality")} onChange={(event) => update({ quality: event.target.value as ExportQuality })}>
+          <SelectInput value={project.exportSettings.quality} aria-label={t("quality")} onChange={(event) => patchProject((current) => ({ ...current, exportSettings: { ...current.exportSettings, quality: event.target.value as ExportQuality } }))}>
             <option value="low">{t("low")}</option>
             <option value="medium">{t("medium")}</option>
             <option value="high">{t("high")}</option>
           </SelectInput>
         </Field> : null}
-        <p className="mb-3 text-xs text-muted">{t("renderingHint")}</p>
-        <button type="button" disabled={progress !== null && progress < 1} onClick={() => void render()} className="w-full rounded-2xl bg-blue px-3 py-3 text-sm font-semibold text-[#1d1f56] disabled:opacity-60">
+        <p className="mb-3 mt-3 text-xs text-muted">{t("renderingHint")}</p>
+        <p className="mb-3 text-xs text-muted">{size.width} × {size.height}</p>
+        <button type="button" onClick={() => {
+          if (format === "png") {
+            downloadPreviewPng();
+            return;
+          }
+          void render();
+        }} className="w-full rounded-2xl bg-blue px-3 py-3 text-sm font-semibold text-[#1d1f56] disabled:opacity-60" disabled={progress !== null && progress < 1}>
           {progress !== null && progress < 1 ? t("rendering") : t("export")}
         </button>
         {progress !== null ? (
@@ -125,21 +136,56 @@ export function ExportPanel({ onClose }: { onClose: () => void }) {
           </div>
         ) : null}
         {error ? <p className="mt-3 rounded-2xl border border-maple/40 bg-navy/50 px-3 py-2 text-sm text-ink">{error}</p> : null}
-        {downloadUrl ? (
+        {file && href ? (
           <div className="mt-3">
+            {file.type.startsWith("image/") ? (
+              <img src={href} alt="" className="mb-3 w-full rounded-2xl border border-white/10" />
+            ) : null}
             <p className="mb-2 text-center text-sm text-cyan">{t("exportReady")}</p>
             <a
               className="block rounded-2xl bg-blue px-3 py-3 text-center text-sm font-semibold text-[#1d1f56]"
-              href={downloadUrl}
-              download={`${(project.name || "Topping_Teaser").replace(/\s+/g, "_")}.${extension}`}
+              href={href}
+              download={file.name}
             >
-              {t("download")} · {extension.toUpperCase()}
+              {t("download")} · {file.name.split(".").pop()?.toUpperCase()}
             </a>
           </div>
         ) : null}
       </div>
     </div>
   );
+}
+
+function capturePreviewPng(canvas: HTMLCanvasElement | null, width: number, height: number): Promise<Blob | null> {
+  if (!canvas || canvas.width !== width || canvas.height !== height) return Promise.resolve(null);
+  return new Promise((resolve) => {
+    canvas.toBlob((blob) => resolve(blob && blob.size > 32 ? blob : null), "image/png");
+  });
+}
+
+async function fileFromExport(
+  blob: Blob,
+  name: string,
+  extension: "png" | "mp4" | "webm",
+  mimeType: string,
+  platform: string,
+): Promise<File> {
+  const head = new Uint8Array(await blob.slice(0, 16).arrayBuffer());
+  const png = head[0] === 0x89 && head[1] === 0x50 && head[2] === 0x4e && head[3] === 0x47;
+  const mp4 = String.fromCharCode(head[4] ?? 0, head[5] ?? 0, head[6] ?? 0, head[7] ?? 0) === "ftyp";
+  if (png) return new File([blob], studioFilename(name, "png", platform), { type: "image/png" });
+  if (mp4) return new File([blob], studioFilename(name, "mp4", platform), { type: "video/mp4" });
+  if (extension === "webm" || mimeType.includes("webm")) {
+    return new File([blob], studioFilename(name, "webm", platform), { type: "video/webm" });
+  }
+  if (extension === "png" || mimeType.includes("png")) {
+    return new File([blob], studioFilename(name, "png", platform), { type: "image/png" });
+  }
+  throw new Error("mp4");
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
 function loadLogo(): Promise<HTMLImageElement | null> {

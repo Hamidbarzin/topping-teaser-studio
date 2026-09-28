@@ -1,6 +1,6 @@
 import type { ToolId } from "../types";
 import { MediaLibrary } from "../media/MediaLibrary";
-import { BrandingPanel } from "../branding/BrandingPanel";
+import { PortraitPostPanel } from "../templates/PortraitPostPanel";
 import { TextPanel } from "../text/TextPanel";
 import { AnimationPanel } from "../animation/AnimationPanel";
 import { TransitionPanel } from "../transitions/TransitionPanel";
@@ -12,7 +12,7 @@ import type { MessageKey } from "../i18n";
 const TOOLS: Array<{ id: ToolId; key: MessageKey }> = [
   { id: "media", key: "media" },
   { id: "timeline", key: "timeline" },
-  { id: "branding", key: "branding" },
+  { id: "branding", key: "postTemplate" },
   { id: "text", key: "text" },
   { id: "animation", key: "animation" },
   { id: "transitions", key: "transitions" },
@@ -62,7 +62,7 @@ export function ToolBody({ detailed }: { detailed: boolean }) {
       </div>
     );
   }
-  if (tool === "branding") return <BrandingPanel detailed={detailed} />;
+  if (tool === "branding") return <PortraitPostPanel />;
   if (tool === "text") return <TextPanel detailed={detailed} />;
   if (tool === "animation") return <AnimationPanel />;
   if (tool === "transitions") return <TransitionPanel />;
