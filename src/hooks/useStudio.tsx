@@ -23,7 +23,7 @@ import { inspectFile, loadImage, loadVideoMeta, makeThumbnail } from "../utils/m
 import { deleteMedia, normalizeProject, saveMedia, saveProject, loadProjectMedia } from "../projects/projectStorage";
 import { sanitizeText } from "../utils/sanitize";
 import { COMPANY } from "../branding/company";
-import { studioFilename, dataUrlToBlob, saveToDownloads } from "../export/saveStudioFile";
+import { studioFilename, dataUrlToBlob, downloadBlob, persistStudioFile, saveToDownloads } from "../export/saveStudioFile";
 import { exportTeaser } from "../export/VideoExporter";
 import { resolveFormatSize } from "../formats/formatPresets";
 import { loadVariantPoster, PORTRAIT_VARIANT_IDS, PORTRAIT_VARIANTS } from "../templates/portraitPost";
@@ -192,9 +192,10 @@ export function StudioProvider({ project: initial, children }: { project: Projec
     try {
       const dataUrl = canvas.toDataURL("image/png");
       const blob = dataUrlToBlob(dataUrl);
+      const href = downloadBlob(blob, filename);
       setLastExport((previous) => {
-        if (previous?.kind === "mp4") URL.revokeObjectURL(previous.href);
-        return { kind: "png", filename, blob, href: dataUrl };
+        if (previous?.href.startsWith("blob:")) URL.revokeObjectURL(previous.href);
+        return { kind: "png", filename, blob, href };
       });
       void saveToDownloads(blob, filename).then((saved) => {
         if (saved) notify(t("savedToFolder", { path: saved }));
@@ -240,7 +241,7 @@ export function StudioProvider({ project: initial, children }: { project: Projec
       const dataUrl = canvas.toDataURL("image/png");
       const blob = dataUrlToBlob(dataUrl);
       const filename = studioFilename(`${current.name}_${id}`, "png", current.exportSettings.platform || "instagram");
-      await saveToDownloads(blob, filename);
+      await persistStudioFile(blob, filename);
       lastHref = dataUrl;
       lastBlob = blob;
       lastName = filename;
@@ -283,6 +284,7 @@ export function StudioProvider({ project: initial, children }: { project: Projec
         return { kind: "mp4", filename, blob: result.blob, href };
       });
       setExportProgress(1);
+      downloadBlob(result.blob, filename);
       void saveToDownloads(result.blob, filename).then((saved) => {
         if (saved) notify(t("savedToFolder", { path: saved }));
         else notify(t("exportReady"));
@@ -541,7 +543,7 @@ export function StudioProvider({ project: initial, children }: { project: Projec
       exportProgress,
       clearLastExport: () => {
         setLastExport((previous) => {
-          if (previous?.kind === "mp4") URL.revokeObjectURL(previous.href);
+          if (previous?.href.startsWith("blob:")) URL.revokeObjectURL(previous.href);
           return null;
         });
         setExportProgress(null);

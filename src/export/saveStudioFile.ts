@@ -1,13 +1,17 @@
-export function nativeDownload(file: File): string {
-  const url = URL.createObjectURL(file);
+export function downloadBlob(blob: Blob, filename: string): string {
+  const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
-  link.download = file.name;
+  link.download = filename;
   link.rel = "noopener";
   document.body.appendChild(link);
   link.click();
   window.setTimeout(() => link.remove(), 0);
   return url;
+}
+
+export function nativeDownload(file: File): string {
+  return downloadBlob(file, file.name);
 }
 
 export function studioFilename(name: string, extension: string, platform = "instagram"): string {
@@ -63,17 +67,29 @@ export async function saveBlobWithPicker(blob: Blob, filename: string): Promise<
 }
 
 export async function saveToDownloads(blob: Blob, filename: string): Promise<string | null> {
-  try {
-    const response = await fetch("/__export", {
-      method: "POST",
-      headers: { "X-Filename": filename },
-      body: blob,
-    });
-    if (!response.ok) return null;
-    const data = (await response.json()) as { path?: string; filename?: string };
-    return data.path ?? data.filename ?? filename;
-  } catch {
-    return null;
+  const endpoints = [`${import.meta.env.BASE_URL}__export`, "/__export"];
+  for (const endpoint of endpoints) {
+    try {
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: { "X-Filename": filename },
+        body: blob,
+      });
+      if (!response.ok) continue;
+      const data = (await response.json()) as { path?: string; filename?: string };
+      return data.path ?? data.filename ?? filename;
+    } catch {
+      /* try next */
+    }
   }
+  return null;
 }
 
+export async function persistStudioFile(blob: Blob, filename: string): Promise<"disk" | "picked" | "link"> {
+  const disk = await saveToDownloads(blob, filename);
+  if (disk) return "disk";
+  const picked = await saveBlobWithPicker(blob, filename);
+  if (picked === "saved") return "picked";
+  downloadBlob(blob, filename);
+  return "link";
+}

@@ -22,7 +22,11 @@ export function renderPortraitPost(
   const { width, height, post } = state;
   const { s, ox, oy } = cardFit(width, height, state.formatId);
   const margin = 60 * s;
-  const photo = { x: ox + margin, y: oy + 176 * s, w: 960 * s, h: 640 * s, r: 40 * s };
+  const maxPhoto = { x: ox + margin, y: oy + 176 * s, w: 960 * s, h: 640 * s, r: 40 * s };
+  const photoSource = activePhoto(state) ?? stockPhoto(state.stockPoster);
+  const photo = photoSource
+    ? frameForMedia(maxPhoto, photoSource.width, photoSource.height)
+    : maxPhoto;
 
   context.clearRect(0, 0, width, height);
   context.fillStyle = PORTRAIT_NAVY;
@@ -36,14 +40,13 @@ export function renderPortraitPost(
   drawBrandLogo(context, state.logo, ox + margin, oy + 56 * s, 250 * s);
   drawOutlinePill(context, ox + 1080 * s - margin, oy + 64 * s, post.tag, s);
 
-  const photoSource = activePhoto(state) ?? stockPhoto(state.stockPoster);
   roundPath(context, photo.x, photo.y, photo.w, photo.h, photo.r);
   context.save();
   context.clip();
   context.fillStyle = "#0C1638";
   context.fillRect(photo.x, photo.y, photo.w, photo.h);
   if (photoSource) {
-    drawContain(context, photoSource.source, photoSource.width, photoSource.height, photo.x, photo.y, photo.w, photo.h);
+    drawImageFill(context, photoSource.source, photoSource.width, photoSource.height, photo.x, photo.y, photo.w, photo.h);
   } else {
     drawMediaSlot(context, photo, s, state.slotLabel ?? "Add photo, video or poster");
   }
@@ -156,7 +159,26 @@ function drawMediaSlot(
   context.fillText(label, photo.x + photo.w / 2, photo.y + photo.h / 2);
 }
 
-function drawContain(
+function frameForMedia(
+  box: { x: number; y: number; w: number; h: number; r: number },
+  mediaW: number,
+  mediaH: number,
+): { x: number; y: number; w: number; h: number; r: number } {
+  const sw = Math.max(1, mediaW);
+  const sh = Math.max(1, mediaH);
+  const fit = Math.min(box.w / sw, box.h / sh);
+  const w = sw * fit;
+  const h = sh * fit;
+  return {
+    x: box.x + (box.w - w) / 2,
+    y: box.y + (box.h - h) / 2,
+    w,
+    h,
+    r: Math.min(box.r, w / 2, h / 2),
+  };
+}
+
+function drawImageFill(
   context: CanvasRenderingContext2D,
   source: CanvasImageSource,
   sw: number,
@@ -166,18 +188,15 @@ function drawContain(
   dw: number,
   dh: number,
 ) {
-  if (sw <= 0 || sh <= 0) {
-    try {
+  try {
+    if (sw <= 0 || sh <= 0) {
       context.drawImage(source, dx, dy, dw, dh);
-    } catch {
-      /* source not ready */
+      return;
     }
-    return;
+    context.drawImage(source, dx, dy, dw, dh);
+  } catch {
+    /* source not ready */
   }
-  const fit = Math.min(dw / sw, dh / sh);
-  const width = sw * fit;
-  const height = sh * fit;
-  context.drawImage(source, dx + (dw - width) / 2, dy + (dh - height) / 2, width, height);
 }
 
 function drawBrandLogo(
