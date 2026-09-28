@@ -25,7 +25,7 @@ export function EditorHeader({
         <img src={COMPANY.logoSrc} alt={t("brand")} className="h-10 w-auto" />
       </button>
       <div className="min-w-0 flex-1 text-center">
-        <p className="font-display text-[11px] tracking-[0.22em] text-cyan">{t("appName")}</p>
+        <p className="font-display text-[11px] tracking-[0.22em] text-cyan">{t("appName")} · card</p>
         <input
           aria-label={t("projectName")}
           value={project.name}
