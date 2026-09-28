@@ -3,6 +3,7 @@ import { exportPixelSize, resolveFormatSize } from "../formats/formatPresets";
 import { qualityBitrate } from "../projects/projectStorage";
 import type { DrawableMedia, ExportFileFormat, ExportSettings, Project } from "../types";
 import { renderFrame } from "../utils/renderFrame";
+import { mixTimelineAudio } from "../utils/mixAudio";
 import { layoutClips } from "../utils/timeline";
 
 export interface ExportRequest {
@@ -96,10 +97,16 @@ async function encodeMp4(
   const codec = await pickAvcCodec(canvas.width, canvas.height);
   if (!codec) throw new Error("mp4");
 
+  request.onProgress(0.02);
+  const canEncodeAac = await aacSupported();
+  const mixed = canEncodeAac ? await mixTimelineAudio(request.project, request.elements, durationMs) : null;
   const target = new ArrayBufferTarget();
   const muxer = new Muxer({
     target,
     video: { codec: "avc", width: canvas.width, height: canvas.height, frameRate: fps },
+    ...(mixed
+      ? { audio: { codec: "aac" as const, numberOfChannels: mixed.numberOfChannels, sampleRate: mixed.sampleRate } }
+      : {}),
     fastStart: "in-memory",
     firstTimestampBehavior: "offset",
   });
@@ -120,6 +127,12 @@ async function encodeMp4(
     avc: { format: "avc" },
   });
 
+  if (mixed) {
+    const audioOk = await encodeTrackAudio(mixed, muxer);
+    if (!audioOk) console.warn("Scene audio could not be encoded");
+    request.onProgress(0.18);
+  }
+
   const frameCount = Math.max(1, Math.round((durationMs / 1000) * fps));
   const frameDuration = Math.round(1_000_000 / fps);
   for (let index = 0; index < frameCount; index += 1) {
@@ -129,7 +142,7 @@ async function encodeMp4(
     const frame = new VideoFrame(canvas, { timestamp, duration: frameDuration });
     encoder.encode(frame, { keyFrame: index % Math.max(1, fps) === 0 });
     frame.close();
-    request.onProgress((index + 1) / frameCount);
+    request.onProgress(0.18 + (0.82 * (index + 1)) / frameCount);
     if (encoder.encodeQueueSize > 8) {
       await new Promise<void>((resolve) => {
         encoder.addEventListener("dequeue", () => resolve(), { once: true });
@@ -146,6 +159,78 @@ async function encodeMp4(
     extension: "mp4",
     mimeType: "video/mp4",
   };
+}
+
+async function aacSupported(): Promise<boolean> {
+  if (typeof AudioEncoder === "undefined" || !AudioEncoder.isConfigSupported) return false;
+  try {
+    const support = await AudioEncoder.isConfigSupported({
+      codec: "mp4a.40.2",
+      sampleRate: 48000,
+      numberOfChannels: 2,
+      bitrate: 160_000,
+    });
+    return Boolean(support.supported);
+  } catch {
+    return false;
+  }
+}
+
+async function encodeTrackAudio(buffer: AudioBuffer, muxer: Muxer<ArrayBufferTarget>): Promise<boolean> {
+  if (typeof AudioEncoder === "undefined" || !AudioEncoder.isConfigSupported) return false;
+  const config: AudioEncoderConfig = {
+    codec: "mp4a.40.2",
+    sampleRate: buffer.sampleRate,
+    numberOfChannels: buffer.numberOfChannels,
+    bitrate: 160_000,
+  };
+  try {
+    const support = await AudioEncoder.isConfigSupported(config);
+    if (!support.supported) return false;
+    let failed: Error | null = null;
+    const encoder = new AudioEncoder({
+      output: (chunk, meta) => muxer.addAudioChunk(chunk, meta),
+      error: (error) => {
+        failed = error;
+      },
+    });
+    encoder.configure(support.config ?? config);
+    const chunkFrames = 1024;
+    const channels = buffer.numberOfChannels;
+    for (let offset = 0; offset < buffer.length; offset += chunkFrames) {
+      if (failed) throw failed;
+      const frames = Math.min(chunkFrames, buffer.length - offset);
+      const data = new Float32Array(frames * channels);
+      for (let channel = 0; channel < channels; channel += 1) {
+        const samples = buffer.getChannelData(channel);
+        for (let index = 0; index < frames; index += 1) {
+          data[index * channels + channel] = samples[offset + index] ?? 0;
+        }
+      }
+      const audio = new AudioData({
+        format: "f32",
+        sampleRate: buffer.sampleRate,
+        numberOfChannels: channels,
+        numberOfFrames: frames,
+        timestamp: Math.round((offset / buffer.sampleRate) * 1_000_000),
+        data,
+      });
+      encoder.encode(audio);
+      audio.close();
+      if (encoder.encodeQueueSize > 8) {
+        await new Promise<void>((resolve) => {
+          encoder.addEventListener("dequeue", () => resolve(), { once: true });
+        });
+      }
+    }
+    await encoder.flush();
+    if (failed) throw failed;
+    encoder.close();
+    return true;
+  } catch (error) {
+    console.warn("Audio encode failed", error);
+    return false;
+  }
 }
 
 async function pickAvcCodec(width: number, height: number): Promise<string | null> {

@@ -175,7 +175,7 @@ export const fa: Record<MessageKey, string> = {
   formatLinkedin: "لینکدین",
   imageDuration: "مدت تصویر",
   videoDuration: "مدت ویدیو از خود فایل خوانده می‌شود.",
-  renderingHint: "تا پایان رندر، این زبانه را باز نگه دارید. خروجی هم‌زمان با پخش ساخته می‌شود.",
+  renderingHint: "تا پایان رندر این زبانه را باز نگه دارید. خروجی MP4 صدای صحنه‌ها را هم دارد.",
   done: "آماده",
   layer: "لایه",
   footerLogo: "لوگوی پاورقی",

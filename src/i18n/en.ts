@@ -174,7 +174,7 @@ export const en = {
   formatLinkedin: "LinkedIn",
   imageDuration: "Image duration",
   videoDuration: "Video length is taken from the file.",
-  renderingHint: "Keep this tab open while the teaser renders in real time.",
+  renderingHint: "Keep this tab open. MP4 export includes the scene audio.",
   done: "Ready",
   layer: "Layer",
   footerLogo: "Footer logo",
